@@ -32,6 +32,27 @@ test('patchJsonFile applies a patch and writes the updated document', async () =
   assert.deepEqual(updatedDocument, { version: 2, features: { logging: true } });
 });
 
+test('patchJsonFile applies an inline patch and reports the inline source', async () => {
+  const tempDir = await createTempDir();
+  const targetPath = path.join(tempDir, 'config.json');
+
+  await fs.writeFile(targetPath, JSON.stringify({ version: 1, features: {} }), 'utf8');
+
+  const result = await patchJsonFile({
+    targetPath,
+    patchContent: JSON.stringify([
+      { op: 'replace', path: '/version', value: 3 },
+      { op: 'add', path: '/features/metrics', value: true },
+    ]),
+  });
+  const updatedDocument = JSON.parse(await fs.readFile(targetPath, 'utf8'));
+
+  assert.equal(result.patchPath, null);
+  assert.equal(result.patchSource, 'inline');
+  assert.equal(result.schemaValidated, false);
+  assert.deepEqual(updatedDocument, { version: 3, features: { metrics: true } });
+});
+
 test('patchJsonFile validates against a sibling schema when present', async () => {
   const tempDir = await createTempDir();
   const targetPath = path.join(tempDir, 'config.json');
@@ -82,5 +103,35 @@ test('patchJsonFile fails when sibling schema validation fails', async () => {
   await assert.rejects(
     () => patchJsonFile({ targetPath, patchPath }),
     /Schema validation failed/,
+  );
+});
+
+test('patchJsonFile fails when both patch file and inline patch are provided', async () => {
+  const tempDir = await createTempDir();
+  const targetPath = path.join(tempDir, 'config.json');
+  const patchPath = path.join(tempDir, 'patch.json');
+
+  await fs.writeFile(targetPath, JSON.stringify({ version: 1 }), 'utf8');
+  await fs.writeFile(patchPath, JSON.stringify([{ op: 'replace', path: '/version', value: 2 }]), 'utf8');
+
+  await assert.rejects(
+    () => patchJsonFile({
+      targetPath,
+      patchPath,
+      patchContent: JSON.stringify([{ op: 'replace', path: '/version', value: 3 }]),
+    }),
+    /either patchPath or patchContent, not both/,
+  );
+});
+
+test('patchJsonFile fails when inline patch content is not valid JSON', async () => {
+  const tempDir = await createTempDir();
+  const targetPath = path.join(tempDir, 'config.json');
+
+  await fs.writeFile(targetPath, JSON.stringify({ version: 1 }), 'utf8');
+
+  await assert.rejects(
+    () => patchJsonFile({ targetPath, patchContent: '{not json}' }),
+    /Inline patch must be valid JSON/,
   );
 });

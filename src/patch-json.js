@@ -3,6 +3,36 @@ const Ajv = require('ajv');
 const { applyPatch, validate } = require('fast-json-patch');
 const { getSchemaPath, readJsonFromFile, writeJsonToFile } = require('./json-utils');
 
+function parseInlinePatch(inlinePatch) {
+  try {
+    return JSON.parse(inlinePatch);
+  } catch {
+    throw new Error('Inline patch must be valid JSON');
+  }
+}
+
+async function loadPatchDocument({ patchPath, patchContent }) {
+  if (patchPath && patchContent) {
+    throw new Error('Provide either patchPath or patchContent, not both');
+  }
+
+  if (patchContent) {
+    return {
+      patchDocument: parseInlinePatch(patchContent),
+      patchSource: 'inline',
+    };
+  }
+
+  if (patchPath) {
+    return {
+      patchDocument: await readJsonFromFile(patchPath),
+      patchSource: patchPath,
+    };
+  }
+
+  throw new Error('A patch source is required');
+}
+
 async function validateAgainstSiblingSchema(targetPath, document) {
   const schemaPath = getSchemaPath(targetPath);
 
@@ -24,9 +54,9 @@ async function validateAgainstSiblingSchema(targetPath, document) {
   return schemaPath;
 }
 
-async function patchJsonFile({ targetPath, patchPath }) {
+async function patchJsonFile({ targetPath, patchPath, patchContent }) {
   const targetDocument = await readJsonFromFile(targetPath);
-  const patchDocument = await readJsonFromFile(patchPath);
+  const { patchDocument, patchSource } = await loadPatchDocument({ patchPath, patchContent });
 
   const errors = validate(patchDocument, targetDocument);
   if (errors) {
@@ -40,12 +70,14 @@ async function patchJsonFile({ targetPath, patchPath }) {
 
   return {
     targetPath,
-    patchPath,
+    patchPath: patchPath || null,
+    patchSource,
     schemaValidated: Boolean(schemaPath),
   };
 }
 
 module.exports = {
+  loadPatchDocument,
   patchJsonFile,
   validateAgainstSiblingSchema,
 };

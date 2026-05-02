@@ -7,7 +7,7 @@ JSON Command Tools is a Node.js command-line project for reading and updating JS
 This project currently provides two commands:
 
 - `patch_json`: updates a JSON file using a JSON Patch document.
-- `read_json`: reads large JSON files with optional paging and sorting controls.
+- `read_json`: reads a single JSON file with schema-first output and optional paging and sorting controls.
 
 ## Getting Started
 
@@ -36,7 +36,7 @@ npx read_json -t ./orders.json -p ./read-options.json
 
 Applies a JSON Patch to a target JSON file.
 
-The patch must be provided through a patch file.
+The patch can be provided either through a patch file or as inline JSON.
 
 If a schema file exists beside the target file using the same base name and the `.schema.json` suffix, the updated JSON will be validated automatically.
 
@@ -50,12 +50,13 @@ Example:
 | Option | Short | Required | Description |
 | --- | --- | --- | --- |
 | `--target` | `-t` | Yes | Path to the target JSON file to update. |
-| `--source` | `-s` | Yes | Path to a file containing the JSON Patch document. |
+| `--source` | `-s` | No | Path to a file containing the JSON Patch document. |
+| `--inline` | `-i` | No | Inline JSON Patch document. |
 
 #### Notes
 
 - The patch format is expected to follow the JSON Patch standard (RFC 6902).
-- Inline JSON content is not supported.
+- Provide either `--source` or `--inline`, but not both.
 - Using a patch file avoids shell-escaping and encoding issues in PowerShell and other command shells.
 
 #### Example: patch from file
@@ -75,6 +76,12 @@ Command:
 patch_json -t ./config.json -s ./patch.json
 ```
 
+#### Example: patch from inline JSON
+
+```bash
+patch_json -t ./config.json -i '[{"op":"replace","path":"/name","value":"production"}]'
+```
+
 #### Example: schema validation
 
 If the following files exist in the same directory:
@@ -88,50 +95,68 @@ then `patch_json` will validate the patched result against `config.schema.json` 
 
 ### `read_json`
 
-Reads JSON files, with support for large arrays through filtering, paging, and sorting.
+Reads a single JSON file, with support for schema-first output, array filtering, paging, and sorting.
 
 This command is useful when the full document is too large to inspect comfortably but only part of the data is needed.
+
+If a sibling schema file exists beside a target file using the same base name and the `.schema.json` suffix, `read_json` reads and returns that schema entry before the JSON document entry.
 
 #### Parameters
 
 | Option | Short | Required | Description |
 | --- | --- | --- | --- |
-| `--target` | `-t` | Yes | Path to the target JSON file. |
-| `--parameter` | `-p` | No | Path to a JSON file describing how to read array content, including path, limit, ordering, and offset. |
-| `--all` | `-a` | No | Reads the entire JSON document without truncating arrays. |
+| `--target` | `-t` | Yes | Path to the JSON file to read. |
+| `--parameter` |  | No | One or more inline JSON objects describing array read options. |
+| `--parameter-path` | `-p` | No | One or more JSON file paths whose root value is an array of read option objects. Parameters from these files are merged with inline `--parameter` values. |
+| `--all` | `-a` | No | Reads the entire JSON document without truncating arrays. This option only works with a single target and cannot be combined with parameter filters. |
 
-#### `--parameter` format
+#### Parameter format
 
-The `--parameter` value must be a path to a JSON file. That file contains a JSON object with the read options. Supported fields include:
+Each parameter object can target one array. Supported fields include:
 
 | Field | Description |
 | --- | --- |
 | `path` | Path to the array to inspect, for example `items`. |
 | `limit` | Maximum number of items to return. If `limit < 0`, all items are returned. |
-| `orderBy` | Field name used for sorting. |
+| `orderBy` | Field name used for sorting. Append ` ASC` or ` DESC` to control direction. |
 | `offset` | Starting index for paging. |
 
 Example:
 
 ```json
-{
-	"path": "items",
-	"limit": 20,
-	"orderBy": "datetime",
-	"offset": 0
-}
+[
+	{
+		"path": "items",
+		"limit": 20,
+		"orderBy": "datetime",
+		"offset": 0
+	},
+	{
+		"path": "errors",
+		"limit": 10,
+		"offset": 0
+	}
+]
 ```
 
 Example file:
 
-- `read-options.json`
+- `read-options.json` containing an array of option objects
+
+Inline example:
+
+```bash
+read_json -t ./orders.json --parameter '{"path":"items","orderBy":"datetime DESC","limit":5}'
+```
 
 #### Default behavior
 
-- By default, arrays are truncated to 200 items.
+- By default, arrays are truncated to 5 items.
+- When an array item is an object, `$array_index` is added to show its original index before sorting, paging, or truncation.
+- If a sibling schema file exists, the schema entry is emitted before the JSON entry for that file.
 - If `--all` is provided, the full JSON document is returned.
 - If `limit` is less than `0`, the selected array is returned without a length restriction.
-- Inline JSON content is not supported for `--parameter`.
+- Multiple arrays can be filtered in one call by combining multiple inline parameter objects and parameter files.
 
 #### Example: read the entire file
 
@@ -165,7 +190,7 @@ This command:
 read_json -t ./orders.json -p ./read-options.json
 ```
 
-returns the first two sorted items from `items`.
+returns the selected slices for every array described in `read-options.json`, with `$array_index` preserving each returned item's original position.
 
 ## Usage Guidance
 

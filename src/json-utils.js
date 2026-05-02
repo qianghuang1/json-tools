@@ -1,7 +1,7 @@
 const fs = require('node:fs/promises');
 const path = require('node:path');
 
-const DEFAULT_ARRAY_LIMIT = 200;
+const DEFAULT_ARRAY_LIMIT = 5;
 
 async function readJsonFromFile(filePath) {
   const content = await fs.readFile(filePath, 'utf8');
@@ -55,14 +55,35 @@ function setValueAtPath(root, inputPath, newValue) {
   return clonedRoot;
 }
 
-function sortItems(items, orderBy) {
+function parseOrderBy(orderBy) {
   if (!orderBy) {
+    return null;
+  }
+
+  const match = String(orderBy).trim().match(/^(.*?)(?:\s+(ASC|DESC))?$/i);
+
+  if (!match) {
+    return null;
+  }
+
+  return {
+    field: match[1].trim(),
+    direction: (match[2] || 'ASC').toUpperCase(),
+  };
+}
+
+function sortItems(items, orderBy) {
+  const parsedOrderBy = parseOrderBy(orderBy);
+
+  if (!parsedOrderBy || !parsedOrderBy.field) {
     return [...items];
   }
 
+  const directionMultiplier = parsedOrderBy.direction === 'DESC' ? -1 : 1;
+
   return [...items].sort((left, right) => {
-    const leftValue = left?.[orderBy];
-    const rightValue = right?.[orderBy];
+    const leftValue = left?.[parsedOrderBy.field];
+    const rightValue = right?.[parsedOrderBy.field];
 
     if (leftValue === rightValue) {
       return 0;
@@ -76,7 +97,7 @@ function sortItems(items, orderBy) {
       return -1;
     }
 
-    return leftValue < rightValue ? -1 : 1;
+    return (leftValue < rightValue ? -1 : 1) * directionMultiplier;
   });
 }
 
@@ -91,9 +112,26 @@ function sliceItems(items, offset = 0, limit = DEFAULT_ARRAY_LIMIT) {
   return items.slice(normalizedOffset, normalizedOffset + normalizedLimit);
 }
 
+function addArrayIndex(item, arrayIndex, maxItems = DEFAULT_ARRAY_LIMIT) {
+  const normalizedItem = truncateArrays(item, maxItems);
+
+  if (normalizedItem && typeof normalizedItem === 'object' && !Array.isArray(normalizedItem)) {
+    return {
+      ...normalizedItem,
+      $array_index: arrayIndex,
+    };
+  }
+
+  return normalizedItem;
+}
+
+function decorateArrayItems(items) {
+  return items.map((item, index) => addArrayIndex(item, index));
+}
+
 function truncateArrays(value, maxItems = DEFAULT_ARRAY_LIMIT) {
   if (Array.isArray(value)) {
-    return value.slice(0, maxItems).map((item) => truncateArrays(item, maxItems));
+    return value.slice(0, maxItems).map((item, index) => addArrayIndex(item, index, maxItems));
   }
 
   if (value && typeof value === 'object') {
@@ -109,6 +147,8 @@ module.exports = {
   DEFAULT_ARRAY_LIMIT,
   getSchemaPath,
   getValueAtPath,
+  decorateArrayItems,
+  parseOrderBy,
   readJsonFromFile,
   setValueAtPath,
   sliceItems,
