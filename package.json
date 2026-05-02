@@ -10,6 +10,14 @@
   "scripts": {
     "test": "node --test"
   },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/qianghuang1/json-tools.git"
+  },
+  "bugs": {
+    "url": "https://github.com/qianghuang1/json-tools/issues"
+  },
+  "homepage": "https://github.com/qianghuang1/json-tools#readme",
   "keywords": [
     "json",
     "cli",
