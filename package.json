@@ -1,6 +1,6 @@
 {
   "name": "json-command-tools",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "CLI tools for reading and patching local JSON files.",
   "type": "commonjs",
   "bin": {
