@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 const { Command } = require('commander');
-const { patchJsonFile } = require('../src/patch-json');
+const { patchJsonFile } = require('../dist/patch-json');
 
 const program = new Command();
 

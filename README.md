@@ -1,20 +1,20 @@
 # JSON Command Tools
 
-JSON Command Tools is a Node.js command-line project for reading and updating JSON files on the local file system. It is intended for operational tasks such as inspecting large JSON documents, applying targeted updates, and validating data against a matching JSON Schema when available.
+A TypeScript toolkit for reading and patching local JSON files.
 
-## Overview
+It provides:
 
-This project currently provides two commands:
+- `read_json` — CLI for reading a single JSON file using the [JPQ protocol](docs/jpq-protocol.md) (filtering, sorting, paging, counting, nested expansion).
+- `patch_json` — CLI for applying a JSON Patch (RFC 6902) to a JSON file with optional sibling-schema validation.
+- `json_server` — HTTP server that hosts a directory of JSON files and exposes them through the same JPQ engine.
 
-- `patch_json`: updates a JSON file using a JSON Patch document.
-- `read_json`: reads a single JSON file with schema-first output and optional paging and sorting controls.
+All three share the same pure JPQ engine, so behavior is identical across the CLI and the server.
 
-## Getting Started
-
-Install dependencies:
+## Installation
 
 ```bash
 npm install
+npm run build   # compiles TypeScript to ./dist
 ```
 
 Run the test suite:
@@ -23,187 +23,212 @@ Run the test suite:
 npm test
 ```
 
-Run the commands from the project directory with `npx`:
+The published `bin/*.js` scripts call into the compiled output in `./dist`.
 
-```bash
-npx patch_json -t ./config.json -s ./patch.json
-npx read_json -t ./orders.json -p ./read-options.json
+## CLI: `read_json`
+
+Reads a JSON file, optionally applying one or more JPQ operations.
+
+```text
+read_json -t <target.json>
+          [--parameter '<json>'...]
+          [-p <ops-file.json>...]
+          [-a]
 ```
-
-## Command Reference
-
-### `patch_json`
-
-Applies a JSON Patch to a target JSON file.
-
-The patch can be provided either through a patch file or as inline JSON.
-
-If a schema file exists beside the target file using the same base name and the `.schema.json` suffix, the updated JSON will be validated automatically.
-
-Example:
-
-- target file: `config.json`
-- schema file: `config.schema.json`
-
-#### Parameters
 
 | Option | Short | Required | Description |
 | --- | --- | --- | --- |
-| `--target` | `-t` | Yes | Path to the target JSON file to update. |
-| `--source` | `-s` | No | Path to a file containing the JSON Patch document. |
-| `--inline` | `-i` | No | Inline JSON Patch document. |
+| `--target` | `-t` | Yes | Path to the JSON file. |
+| `--parameter` | | No | One or more inline JSON JPQ operation objects. |
+| `--parameter-path` | `-p` | No | One or more JSON files whose root is an array of JPQ operations. |
+| `--all` | `-a` | No | Returns the document untouched (no `$array_index`, no truncation). Mutually exclusive with parameters. |
 
-#### Notes
+The CLI returns the JSON document only. Use the `GET /api/schema/<rel-path>` HTTP endpoint or the library `readJsonFileWithSchema` helper if you also need the sibling schema.
 
-- The patch format is expected to follow the JSON Patch standard (RFC 6902).
-- Provide either `--source` or `--inline`, but not both.
-- Using a patch file avoids shell-escaping and encoding issues in PowerShell and other command shells.
-
-#### Example: patch from file
-
-Patch file `patch.json`:
+### Example operation file
 
 ```json
 [
-	{ "op": "replace", "path": "/name", "value": "production" },
-	{ "op": "add", "path": "/features/logging", "value": true }
+  {
+    "path": "/items",
+    "where": {
+      "and": [
+        { "field": "/status", "op": "eq", "value": "open" },
+        { "field": "/amount", "op": "gte", "value": 100 }
+      ]
+    },
+    "orderBy": "/datetime DESC, /id ASC",
+    "offset": 0,
+    "limit": 20,
+    "expand": [
+      { "path": "/lines", "limit": 3, "orderBy": "/sku ASC" }
+    ],
+    "count": { "groupBy": "/status" }
+  }
 ]
 ```
 
-Command:
+```bash
+read_json -t ./orders.json -p ./read-options.json
+```
+
+Inline parameters are validated against a JSON Schema; invalid input produces a readable error message such as:
+
+```
+Invalid JPQ request:
+  - $.operations[0]: unknown property "bogus"
+  - $.operations[0].where.op: must be one of ["eq","ne", ...]
+```
+
+See [docs/jpq-protocol.md](docs/jpq-protocol.md) for the full protocol specification, including the `$array_index` / `$primitive_value` provenance rules and the `$counts` / `$errors` output blocks.
+
+## CLI: `patch_json`
+
+Applies a JSON Patch (RFC 6902) document to a target JSON file.
+
+```text
+patch_json -t <target.json> (-s <patch.json> | -i '<inline-patch>')
+```
+
+| Option | Short | Required | Description |
+| --- | --- | --- | --- |
+| `--target` | `-t` | Yes | Path to the target JSON file. |
+| `--source` | `-s` | No | Path to a JSON Patch file. |
+| `--inline` | `-i` | No | Inline JSON Patch document. |
+
+If a sibling `<name>.schema.json` exists, the patched document is validated against it before being written.
 
 ```bash
 patch_json -t ./config.json -s ./patch.json
-```
-
-#### Example: patch from inline JSON
-
-```bash
 patch_json -t ./config.json -i '[{"op":"replace","path":"/name","value":"production"}]'
 ```
 
-#### Example: schema validation
+## CLI: `json_server`
 
-If the following files exist in the same directory:
+Starts an HTTP server that serves every JSON file under a root directory.
 
-```text
-config.json
-config.schema.json
+```bash
+json_server start -t ./data --host 127.0.0.1 --port 3000
 ```
-
-then `patch_json` will validate the patched result against `config.schema.json` before completion.
-
-### `read_json`
-
-Reads a single JSON file, with support for schema-first output, array filtering, paging, and sorting.
-
-This command is useful when the full document is too large to inspect comfortably but only part of the data is needed.
-
-If a sibling schema file exists beside a target file using the same base name and the `.schema.json` suffix, `read_json` reads and returns that schema entry before the JSON document entry.
-
-#### Parameters
 
 | Option | Short | Required | Description |
 | --- | --- | --- | --- |
-| `--target` | `-t` | Yes | Path to the JSON file to read. |
-| `--parameter` |  | No | One or more inline JSON objects describing array read options. |
-| `--parameter-path` | `-p` | No | One or more JSON file paths whose root value is an array of read option objects. Parameters from these files are merged with inline `--parameter` values. |
-| `--all` | `-a` | No | Reads the entire JSON document without truncating arrays. This option only works with a single target and cannot be combined with parameter filters. |
+| `--target` | `-t` | Yes | Root directory to serve. |
+| `--host` | `-h` | No | Bind host (default `127.0.0.1`). |
+| `--port` | `-p` | No | Listen port (default `3000`). |
+| `--token-file` | | No | Path to a JSON file with sha256-hashed access tokens. When set, every `/api/*` request must present a valid token. |
+| `--no-cors` | | No | Disable CORS headers. CORS is enabled by default for browser clients. |
+| `--quiet` | | No | Disable request logging. |
 
-#### Parameter format
+### CORS
 
-Each parameter object can target one array. Supported fields include:
+CORS is enabled by default for browser-based tools. The server allows `GET`, `POST`, and `OPTIONS` requests, accepts the `authorization`, `content-type`, and `x-access-token` headers, and sends `Access-Control-Allow-Credentials: true` for clients using `credentials: "include"`. Use `--no-cors` if you are hosting behind another gateway that owns CORS policy.
 
-| Field | Description |
-| --- | --- |
-| `path` | Path to the array to inspect, for example `items`. |
-| `limit` | Maximum number of items to return. If `limit < 0`, all items are returned. |
-| `orderBy` | Field name used for sorting. Append ` ASC` or ` DESC` to control direction. |
-| `offset` | Starting index for paging. |
+### Token authentication
 
-Example:
+When `--token-file <path>` is provided, the server requires a token on every `/api/*` request. Clients send the raw token via `Authorization: Bearer <token>` (or `x-access-token: <token>`); the server hashes it with SHA-256 and matches against the configured set in constant time.
 
-```json
-[
-	{
-		"path": "items",
-		"limit": 20,
-		"orderBy": "datetime",
-		"offset": 0
-	},
-	{
-		"path": "errors",
-		"limit": 10,
-		"offset": 0
-	}
-]
-```
-
-Example file:
-
-- `read-options.json` containing an array of option objects
-
-Inline example:
-
-```bash
-read_json -t ./orders.json --parameter '{"path":"items","orderBy":"datetime DESC","limit":5}'
-```
-
-#### Default behavior
-
-- By default, arrays are truncated to 5 items.
-- When an array item is an object, `$array_index` is added to show its original index before sorting, paging, or truncation.
-- If a sibling schema file exists, the schema entry is emitted before the JSON entry for that file.
-- If `--all` is provided, the full JSON document is returned.
-- If `limit` is less than `0`, the selected array is returned without a length restriction.
-- Multiple arrays can be filtered in one call by combining multiple inline parameter objects and parameter files.
-
-#### Example: read the entire file
-
-```bash
-read_json -t ./orders.json -a
-```
-
-#### Example: read a portion of an array
-
-```bash
-read_json -t ./orders.json -p ./read-options.json
-```
-
-#### Example scenario
-
-Given this input file:
+Token file format:
 
 ```json
 {
-	"items": [
-		{ "id": 1, "datetime": "2026-04-18T09:00:00Z" },
-		{ "id": 2, "datetime": "2026-04-18T10:00:00Z" },
-		{ "id": 3, "datetime": "2026-04-18T11:00:00Z" }
-	]
+  "accessTokens": [
+    {
+      "id": "93def96f-5b5d-45dc-9e60-83ec93df43a0",
+      "tokenHash": "c1632e0c9f639b23e47fbb4cae9b3c66d87581ab8627457fa6fefa691a0113a8",
+      "createdAt": "2026-05-04T11:41:11.786Z"
+    }
+  ]
 }
 ```
 
-This command:
+The hash is generated with `sha256(token)` hex-encoded:
 
-```bash
-read_json -t ./orders.json -p ./read-options.json
+```ts
+import { hashToken } from 'json-command-tools';
+hashToken('my-secret-token'); // => "<sha256-hex>"
 ```
 
-returns the selected slices for every array described in `read-options.json`, with `$array_index` preserving each returned item's original position.
+Responses on auth failure: `401 { "error": "Missing access token" }` (no token), or `403 { "error": "Invalid access token" }` (token did not match).
 
-## Usage Guidance
+### HTTP API
 
-- Use `patch_json` when you need deterministic, auditable updates to an existing JSON document.
-- Use `read_json` when the JSON file is too large to inspect as a whole or when only a slice of an array is needed.
-- Keep schema files beside the corresponding target files if validation is required.
+| Method & Path | Description |
+| --- | --- |
+| `GET /api/list` | Lists relative paths to every `*.json` file under the root (excluding `*.schema.json`). |
+| `GET /api/json/<rel-path>` | Returns the file's contents. Add `?all=true` to bypass JPQ. |
+| `POST /api/json/<rel-path>` | Body is a JPQ request; returns the response document with `$counts` / `$errors` siblings when applicable. |
+| `GET /api/schema/<rel-path>` | Returns the file's sibling JSON Schema if present, 404 otherwise. |
 
-## Future Documentation Improvements
+Path traversal is blocked. Request bodies are validated against the same JSON Schema used by the CLI; invalid bodies return `400` with a `details` array of human-readable messages.
 
-If this project grows, the README should also document:
+### Example
 
-- installation steps
-- executable entry points
-- exit codes
-- error messages
-- sample input and output files
+```bash
+curl -s http://127.0.0.1:3000/api/list
+curl -s "http://127.0.0.1:3000/api/json/orders.json?all=true"
+curl -s -X POST http://127.0.0.1:3000/api/json/orders.json \
+  -H 'content-type: application/json' \
+  -d '{
+    "operations": [
+      {
+        "path": "/items",
+        "where": { "field": "/status", "op": "eq", "value": "open" },
+        "orderBy": "/datetime DESC",
+        "limit": 5,
+        "count": { "groupBy": "/status" }
+      }
+    ]
+  }'
+```
+
+## Library API
+
+The package also exports a programmatic API:
+
+```ts
+import {
+  executeJpq,
+  buildResponseDocument,
+  runJpq,
+  readJsonFile,
+  patchJsonFile,
+  buildServer,
+  validateJpqRequest,
+} from 'json-command-tools';
+```
+
+- `executeJpq(document, request)` — pure engine; returns `{ document, counts, errors }`.
+- `buildResponseDocument(response)` — bakes `$counts` / `$errors` into the document.
+- `runJpq(document, request)` — convenience wrapping the two above with validation.
+- `readJsonFile`, `readJsonFileWithSchema` — file-system reads.
+- `patchJsonFile` — file-system patch with sibling-schema validation.
+- `buildServer({ rootDir, ... })` — returns a configured Fastify instance for embedding.
+
+## Project layout
+
+```
+src/
+  core/
+    types.ts        # JPQ types
+    pointer.ts      # RFC 6901 pointer parser/resolver
+    filter.ts       # where evaluator
+    sort.ts         # orderBy parser/sorter
+    count.ts        # count + groupBy
+    provenance.ts   # $array_index / $primitive_value injection
+    jpq.ts          # main engine (executeJpq)
+    schemas.ts      # JSON Schema for JPQ requests
+    validate.ts     # AJV-based validation with friendly errors
+  io.ts             # JSON file read/write + sibling-schema discovery
+  read-json.ts      # high-level read API used by CLI and server
+  patch-json.ts     # patch API
+  server.ts         # Fastify HTTP server
+bin/
+  read_json.js      # CLI shim into ./dist
+  patch_json.js
+  json_server.js
+test/
+  *.test.ts
+docs/
+  jpq-protocol.md   # full JPQ specification
+```

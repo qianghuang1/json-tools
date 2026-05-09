@@ -1,14 +1,26 @@
 {
   "name": "json-command-tools",
-  "version": "1.0.1",
-  "description": "CLI tools for reading and patching local JSON files.",
+  "version": "2.0.0",
+  "description": "CLI tools and HTTP server for reading and patching local JSON files using the JPQ protocol.",
   "type": "commonjs",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
   "bin": {
     "patch_json": "./bin/patch_json.js",
-    "read_json": "./bin/read_json.js"
+    "read_json": "./bin/read_json.js",
+    "json_server": "./bin/json_server.js"
   },
+  "files": [
+    "bin",
+    "dist",
+    "docs",
+    "README.md"
+  ],
   "scripts": {
-    "test": "node --test"
+    "build": "tsc",
+    "prepare": "tsc",
+    "pretest": "tsc && tsc -p tsconfig.test.json",
+    "test": "node --test \"dist-test/test/**/*.test.js\""
   },
   "repository": {
     "type": "git",
@@ -22,12 +34,21 @@
     "json",
     "cli",
     "json-patch",
-    "schema"
+    "jpq",
+    "schema",
+    "http"
   ],
   "license": "MIT",
   "dependencies": {
+    "@fastify/cors": "^11.0.0",
     "ajv": "^8.17.1",
+    "ajv-formats": "^3.0.1",
     "commander": "^14.0.1",
-    "fast-json-patch": "^3.1.1"
+    "fast-json-patch": "^3.1.1",
+    "fastify": "^5.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.6.0"
   }
 }

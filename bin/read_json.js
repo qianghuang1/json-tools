@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 
 const { Command } = require('commander');
-const { readJsonFile, readJsonFileWithSchema } = require('../src/read-json');
+const { readJsonFile } = require('../dist/read-json');
+const { ValidationError } = require('../dist/core/validate');
 
 const program = new Command();
 
@@ -17,36 +18,34 @@ function parseInlineParameters(parameterValues = []) {
 
 program
   .name('read_json')
-  .description('Read a JSON file with schema-first output and optional array paging and sorting.')
+  .description('Read a JSON file using the JPQ protocol (see docs/jpq-protocol.md).')
   .requiredOption('-t, --target <path>', 'path to the JSON file to read')
-  .option('--parameter <json...>', 'one or more inline JSON parameter objects')
-  .option('-p, --parameter-path <paths...>', 'path(s) to JSON files containing read options')
-  .option('-a, --all', 'read the whole JSON document without truncating arrays')
+  .option('--parameter <json...>', 'one or more inline JSON JPQ operation objects')
+  .option('-p, --parameter-path <paths...>', 'path(s) to JSON files containing JPQ operation arrays')
+  .option('-a, --all', 'return the entire document untouched (no truncation, no $array_index)')
   .action(async (options) => {
     try {
       if (options.all) {
         if (options.parameter || options.parameterPath) {
           throw new Error('--all cannot be combined with parameter filters');
         }
-
-        const result = await readJsonFile({
-          targetPath: options.target,
-          includeAll: true,
-        });
-
+        const result = await readJsonFile({ targetPath: options.target, includeAll: true });
         process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
         return;
       }
 
-      const result = await readJsonFileWithSchema({
+      const result = await readJsonFile({
         targetPath: options.target,
         parameters: parseInlineParameters(options.parameter),
         parameterPaths: options.parameterPath || [],
       });
-
       process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
     } catch (error) {
-      process.stderr.write(`${error.message}\n`);
+      if (error instanceof ValidationError) {
+        process.stderr.write(`${error.message}\n`);
+      } else {
+        process.stderr.write(`${error.message || String(error)}\n`);
+      }
       process.exitCode = 1;
     }
   });
