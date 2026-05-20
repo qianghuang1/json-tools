@@ -90,6 +90,40 @@ test('POST /api/json/<path> with JPQ body filters and counts', async () => {
   }
 });
 
+test('POST /api/json/<path> supports select projection', async () => {
+  const tempDir = await createTempDir();
+  await fs.writeFile(
+    path.join(tempDir, 'orders.json'),
+    JSON.stringify({
+      items: [
+        { id: 1, status: 'open', amount: 10 },
+        { id: 2, status: 'closed', amount: 20 },
+      ],
+    }),
+    'utf8',
+  );
+
+  const app = await buildServer({ rootDir: tempDir, logger: false });
+  try {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/json/orders.json',
+      payload: {
+        operations: [{ path: '/items', select: '/id, /status', limit: 2 }],
+      },
+    });
+    assert.equal(res.statusCode, 200);
+    const body = res.json() as { items: Array<{ $array_index: number; id: number; status: string; amount?: number }> };
+    assert.deepEqual(body.items, [
+      { $array_index: 0, id: 1, status: 'open' },
+      { $array_index: 1, id: 2, status: 'closed' },
+    ]);
+    assert.equal(body.items[0].amount, undefined);
+  } finally {
+    await app.close();
+  }
+});
+
 test('POST /api/json with invalid request returns 400 with details', async () => {
   const tempDir = await createTempDir();
   await fs.writeFile(path.join(tempDir, 'a.json'), '{}', 'utf8');

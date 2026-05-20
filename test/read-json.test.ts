@@ -47,6 +47,70 @@ test('runJpq applies orderBy DESC and preserves original $array_index', () => {
   ]);
 });
 
+test('runJpq select returns only selected properties for object elements', () => {
+  const document: JsonValue = {
+    items: [
+      { id: 1, status: 'open', amount: 50 },
+      { id: 2, status: 'closed', amount: 200 },
+    ],
+  };
+  const result = runJpq(document, {
+    operations: [{ path: '/items', select: '/id, /status', limit: 2 }],
+  }) as { items: Array<{ $array_index: number; id: number; status: string; amount?: number }> };
+
+  assert.deepEqual(result.items, [
+    { $array_index: 0, id: 1, status: 'open' },
+    { $array_index: 1, id: 2, status: 'closed' },
+  ]);
+  assert.equal(result.items[0].amount, undefined);
+});
+
+test('runJpq select supports nested pointers and preserves nested shape', () => {
+  const document: JsonValue = {
+    items: [
+      { id: 1, customer: { name: 'A', tier: 'gold' }, status: 'open' },
+    ],
+  };
+  const result = runJpq(document, {
+    operations: [{ path: '/items', select: '/customer/name, /status', limit: 1 }],
+  }) as { items: Array<{ $array_index: number; customer: { name: string; tier?: string }; status: string }> };
+
+  assert.deepEqual(result.items[0], {
+    $array_index: 0,
+    customer: { name: 'A' },
+    status: 'open',
+  });
+  assert.equal(result.items[0].customer.tier, undefined);
+});
+
+test('runJpq select is applied after expand', () => {
+  const document: JsonValue = {
+    items: [
+      {
+        id: 1,
+        lines: [{ sku: 'Z' }, { sku: 'A' }],
+      },
+    ],
+  };
+  const result = runJpq(document, {
+    operations: [
+      {
+        path: '/items',
+        limit: 1,
+        expand: [{ path: '/lines', orderBy: '/sku ASC', limit: 1 }],
+        select: '/id, /lines',
+      },
+    ],
+  }) as { items: Array<{ $array_index: number; id: number; lines: Array<{ sku: string; $array_index: number }> }> };
+
+  assert.equal(result.items.length, 1);
+  assert.deepEqual(result.items[0], {
+    $array_index: 0,
+    id: 1,
+    lines: [{ $array_index: 1, sku: 'A' }],
+  });
+});
+
 test('runJpq filters with where clauses (and/or, comparison ops)', () => {
   const document: JsonValue = {
     items: [
@@ -102,6 +166,14 @@ test('runJpq emits PATH_NOT_ARRAY when target is not an array', () => {
     operations: [{ path: '/items', limit: 1 }],
   }) as { $errors: Record<string, { code: string }> };
   assert.equal(result.$errors['/items'].code, 'PATH_NOT_ARRAY');
+});
+
+test('runJpq emits BAD_SELECT for invalid select syntax', () => {
+  const document: JsonValue = { items: [{ id: 1 }] };
+  const result = runJpq(document, {
+    operations: [{ path: '/items', select: '/id, ,/status', limit: 1 }],
+  }) as { $errors: Record<string, { code: string }> };
+  assert.equal(result.$errors['/items'].code, 'BAD_SELECT');
 });
 
 test('runJpq nested expand slices child arrays in place', () => {

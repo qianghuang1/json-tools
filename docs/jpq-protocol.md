@@ -1,6 +1,6 @@
 # JPQ — JSON Partial Query Protocol
 
-**Status:** Draft v0.7
+**Status:** Draft v0.8
 **Scope:** Read-only, single-document, single-user querying of local JSON files.
 
 JPQ is a small, GraphQL-inspired protocol for reading **slices** of a single JSON document. It supports filtering, sorting, paging, truncation, and counting on any array within the document, while keeping the response as close to the original document shape as possible.
@@ -21,7 +21,6 @@ The protocol is designed to extend the existing `read_json` command in this repo
 
 ### Non-Goals
 
-- No projection / field selection (return elements as-is).
 - No cross-document joins. Use a database for relational workloads.
 - No mutations (use `patch_json` for that).
 - No remote sources, no streaming, no aggregations beyond `count`.
@@ -57,6 +56,7 @@ Inside `where`, `orderBy`, `groupBy`, and nested `expand.path`, pointers are **r
   "operations": [
     {
       "path": "/items",
+      "select": "/id, /status, /lines",
       "where": {
         "and": [
           { "field": "/status", "op": "eq", "value": "open" },
@@ -85,6 +85,7 @@ Inside `where`, `orderBy`, `groupBy`, and nested `expand.path`, pointers are **r
 | Field | Type | Default | Notes |
 |---|---|---|---|
 | `path` | RFC 6901 pointer | `""` | Must resolve to an array. |
+| `select` | string | none | Comma-separated relative pointers. For plain object elements, only selected fields are returned (plus mandatory `$array_index`). Applied after `expand`. |
 | `where` | filter expression | none | See §5. |
 | `orderBy` | string | none | Comma-separated `<pointer> [ASC\|DESC]` keys, applied left-to-right. Direction defaults to `ASC`. Missing/`null` values sort last for `ASC`, first for `DESC`. |
 | `offset` | int ≥ 0 | 0 | |
@@ -102,6 +103,26 @@ pointer   := relative RFC 6901 pointer (leading "/" optional)
 ```
 
 Whitespace around commas and between pointer and direction is ignored. Commas inside pointer tokens are not supported in v1.
+
+### `select` grammar
+
+```
+select := pointer ("," pointer)*
+pointer := relative RFC 6901 pointer (leading "/" optional)
+```
+
+For each plain object element in the final page, JPQ returns:
+
+- `$array_index` (always present).
+- Only the selected fields that resolve on that element.
+
+Nested pointers preserve shape. For example, selecting `/customer/name` produces:
+
+```json
+{ "$array_index": 0, "customer": { "name": "A" } }
+```
+
+Wrapped elements (those using `$primitive_value`) are left unchanged by `select`.
 
 ---
 
@@ -123,6 +144,8 @@ Whitespace around commas and between pointer and direction is ignored. Commas in
 - **Logical operators:** `and`, `or`, `not`.
 - `field` is a relative pointer into the current element. For wrapped elements, use `$primitive_value` (or the empty string `""`) to refer to the element value.
 - `regex` engines should impose a timeout to guard against catastrophic backtracking.
+
+Pipeline order per operation is: `where` → `count` → `orderBy` → `offset/limit` → `expand` → `select`.
 
 ---
 
@@ -321,6 +344,7 @@ Returns the full document **untouched** — no `$array_index` injection, no slic
 | `PATH_NOT_ARRAY` | Pointer resolves but is not an array. |
 | `BAD_POINTER` | Malformed RFC 6901 pointer. |
 | `BAD_ORDER_BY` | `orderBy` string fails to parse. |
+| `BAD_SELECT` | `select` string fails to parse. |
 | `BAD_GROUP_BY` | `groupBy` string fails to parse. |
 | `BAD_FILTER` | `where` expression invalid. |
 
@@ -369,7 +393,7 @@ This section records the choices made during design so future revisions can revi
 1. **RFC 6901 JSON Pointer** chosen over dotted paths for unambiguity.
 2. **Comma-separated string** chosen for multi-key `orderBy` over array form, for terseness in CLI parameter files.
 3. **Cross-document joins removed.** Complex relational data should use a database, not JSON.
-4. **`select` / projection removed.** Single-user, single-document scope means no perf pressure to trim fields; keeping elements as-is preserves shape fidelity.
+4. **`select` / projection added (v0.8).** Projection is limited to relative pointers on array elements and still preserves provenance via mandatory `$array_index`.
 5. **`$primitive_value` wrapping** chosen over always-wrap or skip-provenance, so object responses stay clean while primitives still carry indices.
 6. **No provenance opt-out.** Always emit `$array_index`; choose the cheapest non-lossy carrier.
 7. **Response mirrors the source document.** No envelope around sliced arrays; metadata (`$counts`, `$errors`) lives in top-level sibling keys.

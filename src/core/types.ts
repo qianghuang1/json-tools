@@ -59,6 +59,7 @@ export interface CountOptions {
 
 export interface JpqOperation {
   path?: string;
+  select?: string;
   where?: WhereClause;
   orderBy?: string;
   offset?: number;

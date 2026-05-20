@@ -10,6 +10,7 @@ export const operationSchema = {
   additionalProperties: false,
   properties: {
     path: { type: 'string' },
+    select: { type: 'string' },
     where: { $ref: 'jpq:where' },
     orderBy: { type: 'string' },
     offset: { type: 'integer', minimum: 0 },

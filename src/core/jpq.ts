@@ -9,6 +9,7 @@ import { computeCount, GroupByError } from './count';
 import { evaluateWhere, FilterError } from './filter';
 import { parsePointer, PointerError, resolvePointer, setAtPointer, joinPointer, escapeToken } from './pointer';
 import { attachArrayIndex, wrapRootIfNeeded } from './provenance';
+import { applySelect, parseSelect, SelectError } from './select';
 import { parseOrderBy, sortByKeys, OrderByError } from './sort';
 import type { CountResult, JpqError, JpqOperation, JpqRequest, JsonValue } from './types';
 
@@ -28,6 +29,7 @@ function toJpqError(err: unknown): JpqError {
   if (err instanceof PointerError) return { code: err.code, message: err.message };
   if (err instanceof FilterError) return { code: 'BAD_FILTER', message: err.message };
   if (err instanceof OrderByError) return { code: 'BAD_ORDER_BY', message: err.message };
+  if (err instanceof SelectError) return { code: 'BAD_SELECT', message: err.message };
   if (err instanceof GroupByError) return { code: 'BAD_GROUP_BY', message: err.message };
   if (err instanceof Error) return { code: 'INTERNAL', message: err.message };
   return { code: 'INTERNAL', message: String(err) };
@@ -151,6 +153,16 @@ function processOperation(
       }
       return next;
     });
+  }
+
+  // 8. Select projection: keeps `$array_index` and only requested fields for
+  // plain-object elements. Wrapped elements are left unchanged.
+  try {
+    const selectPointers = parseSelect(operation.select);
+    paged = applySelect(paged, selectPointers);
+  } catch (err) {
+    errors[absolutePointer] = toJpqError(err);
+    return { decoratedSlice: [], counts, errors };
   }
 
   return { decoratedSlice: paged, counts, errors };

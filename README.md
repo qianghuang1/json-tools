@@ -4,7 +4,7 @@ A TypeScript toolkit for reading and patching local JSON files.
 
 It provides:
 
-- `read_json` — CLI for reading a single JSON file using the [JPQ protocol](docs/jpq-protocol.md) (filtering, sorting, paging, counting, nested expansion).
+- `read_json` — CLI for reading a single JSON file using the [JPQ protocol](docs/jpq-protocol.md) (filtering, sorting, paging, count, nested expansion, select projection).
 - `patch_json` — CLI for applying a JSON Patch (RFC 6902) to a JSON file with optional sibling-schema validation.
 - `json_server` — HTTP server that hosts a directory of JSON files and exposes them through the same JPQ engine.
 
@@ -51,6 +51,7 @@ The CLI returns the JSON document only. Use the `GET /api/schema/<rel-path>` HTT
 [
   {
     "path": "/items",
+    "select": "/id, /status, /lines",
     "where": {
       "and": [
         { "field": "/status", "op": "eq", "value": "open" },
@@ -81,6 +82,8 @@ Invalid JPQ request:
 ```
 
 See [docs/jpq-protocol.md](docs/jpq-protocol.md) for the full protocol specification, including the `$array_index` / `$primitive_value` provenance rules and the `$counts` / `$errors` output blocks.
+
+`select` is a comma-separated list of relative JSON pointers. For object elements, JPQ returns only selected fields plus mandatory `$array_index`.
 
 ## CLI: `patch_json`
 
