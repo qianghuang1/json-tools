@@ -8,12 +8,15 @@
   "bin": {
     "patch_json": "./bin/patch_json.js",
     "read_json": "./bin/read_json.js",
-    "json_server": "./bin/json_server.js"
+    "json_server": "./bin/json_server.js",
+    "build-storage": "./bin/build-storage.js",
+    "skill": "./bin/skill.js"
   },
   "files": [
     "bin",
     "dist",
     "docs",
+    "skills",
     "README.md"
   ],
   "scripts": {

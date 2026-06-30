@@ -7,8 +7,10 @@ It provides:
 - `read_json` — CLI for reading a single JSON file using the [JPQ protocol](docs/jpq-protocol.md) (filtering, sorting, paging, count, nested expansion, select projection).
 - `patch_json` — CLI for applying a JSON Patch (RFC 6902) to a JSON file with optional sibling-schema validation.
 - `json_server` — HTTP server that hosts a directory of JSON files and exposes them through the same JPQ engine.
+- `build-storage` — CLI for generating a `directory.md` index for schema-backed JSON storage files.
+- `skill copy` — CLI for copying the packaged `skills` folder into another folder.
 
-All three share the same pure JPQ engine, so behavior is identical across the CLI and the server.
+The JSON reader, patcher, and server share the same pure JPQ engine, so behavior is identical across the CLI and the server.
 
 ## Installation
 
@@ -165,6 +167,30 @@ Responses on auth failure: `401 { "error": "Missing access token" }` (no token),
 
 Path traversal is blocked. Request bodies are validated against the same JSON Schema used by the CLI; invalid bodies return `400` with a `details` array of human-readable messages.
 
+## CLI: `build-storage`
+
+Generates a `directory.md` table for structured JSON storage files. The default target is `~/.agent-storage`; pass `--target` to index another storage root.
+
+```bash
+build-storage
+build-storage -t ~/.agent-storage
+build-storage --target ./storage
+```
+
+The command scans for `*.json` files, skips `*.schema.json`, reads sibling schema `title` and `description` metadata when available, and writes a table with linked storage names, descriptions, and relative paths.
+
+## CLI: `skill copy`
+
+Copies the packaged `skills` folder into a target folder. The default target is the current working directory, so `skill copy` creates or copies into `./skills`.
+
+```bash
+skill copy
+skill copy ./my-agent-config
+skill copy ./my-agent-config --force
+```
+
+Use `--force` to overwrite an existing target `skills` folder.
+
 ### Example
 
 ```bash
@@ -196,6 +222,8 @@ import {
   runJpq,
   readJsonFile,
   patchJsonFile,
+  buildStorageDirectory,
+  copySkillsFolder,
   buildServer,
   validateJpqRequest,
 } from 'json-command-tools';
@@ -206,6 +234,8 @@ import {
 - `runJpq(document, request)` — convenience wrapping the two above with validation.
 - `readJsonFile`, `readJsonFileWithSchema` — file-system reads.
 - `patchJsonFile` — file-system patch with sibling-schema validation.
+- `buildStorageDirectory` — generates `directory.md` for a structured JSON storage root.
+- `copySkillsFolder` — copies the packaged `skills` folder into a target folder.
 - `buildServer({ rootDir, ... })` — returns a configured Fastify instance for embedding.
 
 ## Project layout
